@@ -45,7 +45,7 @@ func fetchInbox(srv *gmail.Service) {
 			log.Println("Received jobs item", pageToken, more)
 			if more {
 				fmt.Println("received job", pageToken)
-				r, err := srv.Users.Messages.List(userID).Q("in:inbox").PageToken(pageToken).MaxResults(100).Do()
+				r, err := srv.Users.Messages.List(userID).Q("in:inbox").PageToken(pageToken).MaxResults(10).Do()
 				if err != nil {
 					log.Fatalf("Unable to retrieve inbox. %v", err)
 				}
@@ -55,13 +55,16 @@ func fetchInbox(srv *gmail.Service) {
 					// go getMessage(m.Id, srv)
 
 				}
-				if r.NextPageToken != "" {
-					go func() { jobs <- r.NextPageToken }()
-					log.Println("Sent next page token", r.NextPageToken)
-				} else {
-					log.Println("Closing jobs")
-					close(jobs)
-				}
+				// if r.NextPageToken != "" {
+				// 	go func() { jobs <- r.NextPageToken }()
+				// 	log.Println("Sent next page token", r.NextPageToken)
+				// } else {
+				// 	log.Println("Closing jobs")
+				// 	close(jobs)
+				// }
+
+				log.Println("Closing jobs")
+				close(jobs)
 
 			} else {
 				log.Println("received all jobs")

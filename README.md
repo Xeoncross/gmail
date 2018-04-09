@@ -19,6 +19,10 @@ go get github.com/spf13/viper
 git clone https://github.com/suneil/gmail
 ```
 
+https://developers.google.com/gmail/api/quickstart/go
+
+
+
 ## License
 
 See LICENSE for details
