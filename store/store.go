@@ -53,9 +53,11 @@ func Add(raw *gmail.Message) {
 	fmt.Println(p)
 
 	// Skip this message
-	if _, err := os.Stat(p); err == nil {
+	if _, err := os.Stat(p); err == nil || os.IsNotExist(err) {
 		return
 	}
+
+	os.MkdirAll(newpath, os.ModePerm)
 
 	// dump(raw)
 	// ioutil.WriteFile(p, []byte(raw.Raw), 0775)

@@ -55,7 +55,15 @@ iQIVAwUBUvPn/Tk1h9l9hlALAQisew
 
 func main() {
 
-	mw, err := NewEmailFromReader(bytes.NewBufferString(myMessage))
+	dir = "./emails"
+	// dir, err := ioutil.TempDir("", "example")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	//
+	// defer os.RemoveAll(dir) // clean up
+
+	mw, err := NewEmailFromReader(bytes.NewBufferString(myMessage), dir)
 
 	if err != nil {
 		log.Fatal(err)
@@ -94,7 +102,7 @@ func (tr trimReader) Read(buf []byte) (int, error) {
 // NewEmailFromReader reads a stream of bytes from an io.Reader, r,
 // and returns an email struct containing the parsed data.
 // This function expects the data in RFC 5322 format.
-func NewEmailFromReader(r io.Reader) (mw MailWrapper, err error) {
+func NewEmailFromReader(r io.Reader, dir string) (mw MailWrapper, err error) {
 	s := trimReader{rd: r}
 	tp := textproto.NewReader(bufio.NewReader(s))
 
@@ -104,7 +112,7 @@ func NewEmailFromReader(r io.Reader) (mw MailWrapper, err error) {
 	}
 
 	// Recursively parse the MIME parts
-	mw.Parts, err = parseMIMEParts(mw.Header, tp.R)
+	mw.Parts, err = parseMIMEParts(mw.Header, tp.R, dir)
 	return
 }
 
@@ -120,7 +128,7 @@ func readAll(r io.Reader) []byte {
 // each (flattened) mime.Part found.
 // It is important to note that there are no limits to the number of recursions, so be
 // careful when parsing unknown MIME structures!
-func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader) (parts []*Part, err error) {
+func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader, dir) (parts []*Part, err error) {
 
 	ct, params, err := mime.ParseMediaType(hs.Get("Content-Type"))
 	if err != nil {
