@@ -1,0 +1,386 @@
+package largemail
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"mime/quotedprintable"
+	"net/textproto"
+	"testing"
+
+	"github.com/icrowley/fake"
+)
+
+/*
+Need to wrap base64 content. quotedprintable wraps itself.
+- https://github.com/jordan-wright/email/blob/master/email.go#L537
+- https://github.com/scorredoira/email/blob/master/email.go#L206
+
+*/
+
+// https://github.com/jhillyerd/enmime/blob/master/builder.go#L225
+// Fully loaded structure; the presence of text, html, inlines, and attachments will determine
+// how much is necessary:
+//
+//  multipart/mixed
+//  |- multipart/related
+//  |  |- multipart/alternative
+//  |  |  |- text/plain
+//  |  |  `- text/html
+//  |  `- inlines..
+//  `- attachments..
+
+type devZero byte
+
+func (z devZero) Read(b []byte) (int, error) {
+	for i := range b {
+		b[i] = byte(i)
+	}
+	return len(b), nil
+}
+
+func dataSrc(size int64) io.Reader {
+	var z devZero
+	return io.LimitReader(z, size)
+}
+
+func Test(t *testing.T) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	var part io.Writer
+	var err error
+
+	// Master wrapper
+	part, err = writer.CreatePart(map[string][]string{"Content-Type": []string{"multipart/mixed"}})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Text Content
+	{
+		subWriter := multipart.NewWriter(part)
+
+		part, err = subWriter.CreatePart(map[string][]string{"Content-Type": []string{"multipart/alternative"}})
+		if err != nil {
+			t.Error(err)
+		}
+
+		childWriter := multipart.NewWriter(part)
+
+		var subpart io.Writer
+		for _, contentType := range []string{"text/plain", "text/html"} {
+			subpart, err = CreateQuoteTypePart(childWriter, contentType)
+			if err != nil {
+				t.Error(err)
+			}
+			err = WriteParagraphs(subpart, 2)
+			if err != nil {
+				t.Error(err)
+			}
+		}
+	}
+
+	writer.Close()
+
+	fmt.Println(body.String())
+}
+
+// func BuildEmail() ([]byte, error) {
+//
+// }
+
+// V2
+
+// type Part interface {
+// 	Fill() ([]byte, error)
+// 	Headers() textproto.MIMEHeader
+// }
+//
+// type MultipartWrapper []Part
+//
+// func (w *MultipartWrapper) Build() (buf *bytes.Buffer, err error) {
+// 	buf = &bytes.Buffer{}
+// 	for _, part := range *w {
+// 		var b []byte
+// 		b, err = part.Fill()
+// 		buf.Write(b)
+// 	}
+// 	return
+// }
+//
+// type MixedPart struct {
+// 	Children []Part
+// }
+//
+// func (m *MixedPart) Fill() ([]byte, error) {
+//
+// 	buf := &bytes.Buffer{}
+// 	// w := multipart.NewWriter(w)
+//
+// 	for _, part := range m.Children {
+//
+// 		// w.CreatePart(header)
+//
+// 		var b []byte
+// 		b, _ = part.Fill()
+// 		buf.Write(b)
+// 	}
+// 	return buf.Bytes(), nil
+// }
+//
+// type TextPart struct {
+// 	Size int
+// }
+//
+// func (m *TextPart) Fill() ([]byte, error) {
+// 	return []byte("hello"), nil
+// }
+
+// func Test(t *testing.T) {
+// 	parts := MultipartWrapper{
+// 		&MixedPart{
+// 			Children: []Part{
+// 				&TextPart{Size: 5},
+// 			},
+// 		},
+// 	}
+//
+// 	b, err := parts.Build()
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	fmt.Printf("%q\n", b)
+// }
+
+// func Test(t *testing.T) {
+//
+// 	var size int64
+// 	// size = 1024 * 1024 * 5
+// 	size = 10
+//
+// 	body, err := CreateMultiparts(2, 2, size)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+//
+// 	fmt.Println("Length", body.Len())
+//
+// 	fmt.Printf("%q\n", body.String())
+// }
+
+/*
+func CreateManualPart(writer *multipart.Writer, size int64, contentType string) (err error) {
+
+	// body = &bytes.Buffer{}
+	// writer := multipart.NewWriter(body)
+
+	var part io.Writer
+
+	var header textproto.MIMEHeader
+	header["Content-Type"] = []string{contentType}
+	header["Content-Transfer-Encoding"] = []string{"quoted-printable"}
+
+	part, err = writer.CreatePart(header)
+	if err != nil {
+		return
+	}
+
+	var msg string
+	for len(msg) < int(size) {
+		msg += fake.Paragraph() + "\r\n"
+	}
+
+	// Actual data here
+	// _, err = io.Copy(part, quotedprintable.NewReader(dataSrc(size)))
+	_, err = io.Copy(part, quotedprintable.NewReader(strings.NewReader(msg)))
+	if err != nil {
+		return
+	}
+	return
+}
+
+func CreateHTMLPart(writer *multipart.Writer, size int64) error {
+	return CreateManualPart(writer, size, "text/html; charset=UTF-8")
+}
+
+func CreateTextPart(writer *multipart.Writer, size int64) error {
+	return CreateManualPart(writer, size, "text/plain; charset=UTF-8")
+}
+*/
+
+func WriteParagraphs(part io.Writer, size int64) error {
+	var length int
+	for length < int(size) {
+		n, err := part.Write([]byte(fake.Paragraph() + "\r\n\r\n"))
+		if err != nil {
+			return err
+		}
+		length += n
+	}
+
+	return nil
+}
+
+// https://github.com/domodwyer/mailyak/blob/master/attachments.go#L142
+func CreateQuoteTypePart(writer *multipart.Writer, contentType string) (part io.Writer, err error) {
+	header := textproto.MIMEHeader{
+		"Content-Type":              []string{contentType},
+		"Content-Transfer-Encoding": []string{"quoted-printable"},
+	}
+
+	part, err = writer.CreatePart(header)
+	if err != nil {
+		return
+	}
+	part = quotedprintable.NewWriter(part)
+	return
+}
+
+// func CreateFilePart(writer *multipart.Writer, size int64) (part io.Writer, err error) {
+// 	filename := fmt.Sprintf("File_%d", rand.Int31())
+// 	part, err = writer.CreateFormFile(filename, filename+".jpg")
+// 	return
+// }
+
+// func CreateMixedPart(writer *multipart.Writer) (part io.Writer, err error) {
+// 	var header textproto.MIMEHeader
+// 	header["Content-Type"] = []string{"multipart/mixed"}
+// 	return writer.CreatePart(header)
+// }
+//
+// func CreateAlternativePart(writer *multipart.Writer) (part io.Writer, err error) {
+// 	// var header textproto.MIMEHeader
+// 	// header["Content-Type"] = []string{"multipart/alternative"}
+// 	// return writer.CreatePart(header)
+// 	return writer.CreatePart(map[string][]string{"Content-Type": []string{"multipart/alternative"}})
+// }
+
+//
+// func CreateMultipart(mixed bool, number int, depth int, size int64) (body *bytes.Buffer, err error) {
+//
+// 	body = &bytes.Buffer{}
+// 	writer := multipart.NewWriter(body)
+//
+// 	var part io.Writer
+//
+// 	// multipart/mixed (attachments, etc...)
+// 	if mixed {
+// 		part, err = CreateMixedPart(writer)
+// 	} else {
+// 		part, err = CreateAlternativePart(writer)
+// 	}
+//
+// 	if err != nil {
+// 		return
+// 	}
+//
+// 	for i := 0; i < number; i++ {
+//
+// 		var childBody *bytes.Buffer
+// 		childBody, err = CreateMultiparts(number, depth-1, size)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+//
+// 		_, err = childBody.WriteTo(part)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 	}
+//
+// 	return
+// }
+//
+// func CreateMultiparts(number int, depth int, size int64) (body *bytes.Buffer, err error) {
+//
+// 	body = &bytes.Buffer{}
+// 	writer := multipart.NewWriter(body)
+//
+// 	for i := 0; i < number; i++ {
+// 		var part io.Writer
+//
+// 		if depth == 0 {
+// 			if i == 0 {
+// 				_, err = CreateTypePart(writer, "text/html; charset=UTF-8")
+// 				err = WriteParagraphs(part, size)
+// 				if err != nil {
+// 					return
+// 				}
+// 			} else if i == 1 {
+// 				_, err = CreateTypePart(writer, "text/plain; charset=UTF-8")
+// 				err = WriteParagraphs(part, size)
+// 				if err != nil {
+// 					return
+// 				}
+// 			} else {
+// 				_, err = CreateFilePart(writer, size)
+// 			}
+//
+// 		} else {
+//
+// 		}
+//
+// 	}
+//
+// 	writer.Close()
+// 	return
+// }
+
+/*
+func CreateMultipart(number int, depth int, size int64) (body *bytes.Buffer, err error) {
+
+	body = &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.
+
+	for i := 0; i < number; i++ {
+		var part io.Writer
+
+		// Every other is a file
+		if i%2 == 0 {
+			part, err = writer.CreateFormFile(fmt.Sprintf("Field_%d", i), "random/path/here")
+			// _, err = io.Copy(part, dataSrc(size))
+			// if err != nil {
+			// 	return nil, err
+			// }
+		} else {
+			part, err = writer.CreateFormField(fmt.Sprintf("Field_%d", i))
+			// 	_, err = io.Copy(part, dataSrc(size))
+			// 	if err != nil {
+			// 		return nil, err
+			// 	}
+			// } else {
+			// err = CreateHTMLPart(writer, size)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		// Actual data here
+		if depth == 0 {
+			_, err = io.Copy(part, dataSrc(size))
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			var childBody *bytes.Buffer
+			childBody, err = CreateMultipart(number, depth-1, size)
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = childBody.WriteTo(part)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+	}
+
+	writer.Close()
+	return
+}
+*/

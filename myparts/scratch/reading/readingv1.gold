@@ -1,0 +1,110 @@
+package main
+
+import (
+	"encoding/base64"
+	"io"
+	"os"
+)
+
+type devZero byte
+
+func (z devZero) Read(b []byte) (int, error) {
+	for i := range b {
+		b[i] = byte(z)
+	}
+	return len(b), nil
+}
+
+func mockDataSrc(size int64) io.Reader {
+	var z devZero
+	return io.LimitReader(z, size)
+}
+
+type MimeWrapWriter struct {
+	out io.Writer
+}
+
+func (w MimeWrapWriter) Write(b []byte) (bytesWritten int, err error) {
+	stride := 76
+
+	for left := 0; left < len(b); left += stride {
+		right := left + stride
+		if right > len(b) {
+			right = len(b)
+		}
+
+		w.out.Write(b[left:right])
+		w.out.Write([]byte("\n"))
+	}
+	return len(b), nil
+}
+
+func main() {
+	// input := strings.NewReader(strings.Repeat("Hello World! 012345.", 30))
+	input := mockDataSrc(1024) // ~536MB
+
+	writer := MimeWrapWriter{os.Stdout}
+
+	encoder := base64.NewEncoder(base64.StdEncoding, writer)
+
+	io.Copy(encoder, input)
+
+	encoder.Close()
+}
+
+// type Wrapper struct {
+// 	w io.Writer
+// }
+
+// func (w Wrapper) Write(p []byte) (int, error) {
+// 	buf := make([]byte, 76)
+// 	for len() {
+// 		n, err := in.Read(buf)
+//
+// 		if err != nil {
+// 			if err != io.EOF {
+// 				log.Fatal(err)
+// 				break
+// 			}
+// 		}
+//
+// 		// Process
+// 		fmt.Fprintf(os.Stdout, "%s\n", buf[:n])
+//
+// 		// handle any remainding bytes before exit
+// 		if err == io.EOF {
+// 			break
+// 		}
+// 	}
+// }
+
+// func main() {
+// 	// 1: Source stream
+// 	// in := strings.NewReader(strings.Repeat("Hello World! 012345.", 30))
+//
+// 	// 2: encode it
+// 	encoder := base64.NewEncoder(base64.StdEncoding, os.Stdout)
+//
+// 	io.Copy(encoder, bytes.NewBufferString("helo"))
+//
+// 	// Wrap it
+// 	// buf := make([]byte, 76)
+// 	// for {
+// 	// 	n, err := in.Read(buf)
+// 	//
+// 	// 	if err != nil {
+// 	// 		if err != io.EOF {
+// 	// 			log.Fatal(err)
+// 	// 			break
+// 	// 		}
+// 	// 	}
+// 	//
+// 	// 	// Process
+// 	// 	fmt.Fprintf(os.Stdout, "%s\n", buf[:n])
+// 	//
+// 	// 	// handle any remainding bytes before exit
+// 	// 	if err == io.EOF {
+// 	// 		break
+// 	// 	}
+// 	// }
+// }

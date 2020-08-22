@@ -10,25 +10,32 @@ func main() {
 
 	parts := Parts{
 		Part{
-			Name: "textpart1",
+			Name: TextPlain,
 			Source: TextPart{
-				ContentType: "text/plain/part",
-				Text:        "This is the text that goes in the plain part. It will need to be wrapped to 76 characters and quoted.",
+				Text: "This is the text that goes in the plain part. It will need to be wrapped to 76 characters and quoted.",
 			},
 		},
 		Part{
 			Name: "filepart1",
 			Source: File{
-				Name:   "filename.txt",
+				Name:   "filename.jpg",
 				Reader: strings.NewReader("Filename text content"),
 			},
 		},
-		// Part{
-		// 	Name: "jsonpart1",
-		// 	Source: JSON{
-		// 		Value: map[string]int{"one": 1, "two": 2},
-		// 	},
-		// },
+		Part{
+			Name: "filepart1",
+			Source: File{
+				Name:   "filename-2 שלום.txt",
+				Inline: true,
+				Reader: strings.NewReader("Filename text content"),
+			},
+		},
+		Part{
+			Name: "jsonpart1",
+			Source: JSON{
+				Value: map[string]int{"one": 1, "two": 2},
+			},
+		},
 	}
 
 	buf := &bytes.Buffer{}

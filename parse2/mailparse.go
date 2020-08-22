@@ -55,7 +55,7 @@ iQIVAwUBUvPn/Tk1h9l9hlALAQisew
 
 func main() {
 
-	dir = "./emails"
+	dir := "./tmp"
 	// dir, err := ioutil.TempDir("", "example")
 	// if err != nil {
 	// 	log.Fatal(err)
@@ -70,6 +70,9 @@ func main() {
 	}
 
 	fmt.Println(len(mw.Parts), "parts found")
+
+	fmt.Println(mw.Close())
+
 }
 
 // MailWrapper around headers and parts
@@ -79,10 +82,25 @@ type MailWrapper struct {
 	Parts  []*Part
 }
 
+func (m MailWrapper) Close() (err error) {
+	for _, p := range m.Parts {
+		err = p.Close()
+		if err != nil {
+			return
+		}
+	}
+	return nil
+}
+
 // Part is a copyable representation of a multipart.Part
 type Part struct {
 	Header textproto.MIMEHeader
 	Body   io.Reader
+	Closer io.ReadCloser
+}
+
+func (p Part) Close() error {
+	return p.Closer.Close()
 }
 
 // trimReader is a custom io.Reader that will trim any leading
@@ -116,19 +134,19 @@ func NewEmailFromReader(r io.Reader, dir string) (mw MailWrapper, err error) {
 	return
 }
 
-func readAll(r io.Reader) []byte {
-	b, err := ioutil.ReadAll(r)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return b
-}
+// func readAll(r io.Reader) []byte {
+// 	b, err := ioutil.ReadAll(r)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	return b
+// }
 
 // parseMIMEParts will recursively walk a MIME entity and return a []mime.Part containing
 // each (flattened) mime.Part found.
 // It is important to note that there are no limits to the number of recursions, so be
 // careful when parsing unknown MIME structures!
-func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader, dir) (parts []*Part, err error) {
+func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader, dir string) (parts []*Part, err error) {
 
 	ct, params, err := mime.ParseMediaType(hs.Get("Content-Type"))
 	if err != nil {
@@ -176,7 +194,7 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader, dir) (parts []*Part, e
 				// fmt.Println("\tparsing multipart?", subct)
 
 				var subparts []*Part
-				subparts, err = parseMIMEParts(p.Header, body)
+				subparts, err = parseMIMEParts(p.Header, body, dir)
 				if err != nil {
 					return
 				}
@@ -186,11 +204,11 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader, dir) (parts []*Part, e
 				// fmt.Println("\tparsing plain?", subct)
 
 				var tmpFile *os.File
-				tmpFile, err = ioutil.TempFile("./emails", "mime")
+				tmpFile, err = ioutil.TempFile(dir, "mime")
 				if err != nil {
 					return
 				}
-				defer tmpFile.Close()
+				tmpFile.Close()
 
 				_, err = io.Copy(tmpFile, body) // Save body disk
 				if err != nil {
@@ -200,7 +218,7 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader, dir) (parts []*Part, e
 				// Rewind for reading
 				tmpFile.Seek(0, 0)
 
-				parts = append(parts, &Part{Body: tmpFile, Header: p.Header})
+				parts = append(parts, &Part{Body: tmpFile, Closer: tmpFile, Header: p.Header})
 			}
 		}
 	} else {

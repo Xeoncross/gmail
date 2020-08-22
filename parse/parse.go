@@ -101,7 +101,7 @@ func main() {
 // Any "quoted-printable" or "base64" encoded bodies will be decoded.
 func ParseMessage(r io.Reader) (io.Reader, error) {
 
-	p := textproto.NewReader(bufio.NewReader(s))
+	// p := textproto.NewReader(bufio.NewReader(s))
 
 	msg, err := mail.ReadMessage(bufioReader(r))
 	if err != nil {
